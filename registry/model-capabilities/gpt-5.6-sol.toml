@@ -1,0 +1,77 @@
+[model]
+key = "gpt-5.6-sol"
+display = "GPT-5.6 Sol"
+vendor = "OpenAI"
+release_date = "not announced"
+availability = "limited preview"
+availability_as_of = "2026-07-09"
+knowledge_cutoff = "2026-02-16"
+input_modalities = ["text", "image"]
+output_modalities = ["text"]
+identity_verification = "OpenAI's model page identifies the exact gpt-5.6-sol model ID. The GPT-5.6 family Help Center article describes limited-preview access as of 2026-07-09. No versioned snapshot or GA date is asserted here."
+
+[api]
+endpoint_families = ["responses", "chat-completions", "batch"]
+auth = "The documented capabilities and prices are for OpenAI Platform API use. Codex CLI may instead use ChatGPT/OAuth plan credentials and workspace permissions."
+codex_oauth_caveat = "Codex OAuth entitlements and effective context can differ from API billing and capabilities."
+streaming = "Supported for this limited-preview model."
+supported_features = ["streaming", "function_calling", "structured_outputs"]
+
+[caching]
+supported = true
+mode = "implicit"
+how_enabled = "Prompt caching is supported. Cached input is billed at the model's cached-input rate; cache writes are billed at 1.25x uncached input."
+ttl = "No model-specific cache-retention duration is asserted by the cited GPT-5.6 preview sources."
+read_pricing_per_m = 0.50
+write_pricing_per_m = 6.25
+min_cacheable_prefix_tokens = 1024
+
+[tool_calling]
+format = "OpenAI Responses API tools and function calls with JSON Schema parameters; Chat Completions function calling and Structured Outputs are supported."
+parallel = true
+strict_json_schema = true
+tools = ["web_search", "file_search", "image_generation", "code_interpreter", "hosted_shell", "apply_patch", "skills", "computer_use", "mcp", "tool_search"]
+quirks = [
+  "Use the exact gpt-5.6-sol model ID for deterministic routing of this preview tier.",
+  "Limited-preview access can be narrower than the published API capability surface.",
+  "Codex OAuth entitlements and effective context can differ from API billing and capabilities.",
+]
+
+[reasoning]
+params = ["reasoning.effort", "text.verbosity", "max_output_tokens", "model_reasoning_effort", "model_reasoning_summary", "model_verbosity"]
+defaults = "The cited preview sources do not publish a model-specific reasoning-effort default; when unset, Codex and model defaults apply."
+max_output_interaction = "max_output_tokens limits total generated tokens, including reasoning and visible output."
+
+[limits]
+context_window = 1050000
+max_input_tokens = 922000
+max_output_tokens = 128000
+rate_limits = "Limited-preview access applies as of 2026-07-09; no GA date or model-specific API rate-limit table is asserted here. Codex OAuth entitlements and effective context can differ from API limits."
+
+[openrouter]
+upstream_providers = []
+require_parameters_behavior = "not applicable; this registry entry is for OpenAI direct/Codex OAuth access, not an OpenRouter-served model"
+
+[pricing]
+prompt_per_m = 5.00
+completion_per_m = 30.00
+cache_read_per_m = 0.50
+cache_write_per_m = 6.25
+cache_write_multiplier = 1.25
+long_context_input_threshold = 272000
+long_context_input_multiplier = 2.00
+long_context_output_multiplier = 1.50
+long_context_rule = "Requests above 272K input tokens price the full request at 2x input and 1.5x output."
+as_of = "2026-07-09"
+
+[[sources]]
+claim = "model and capabilities: exact model ID, limits, cutoff, modalities, endpoints, features, tools, and pricing multipliers"
+url = "https://developers.openai.com/api/docs/models/gpt-5.6-sol"
+accessed = "2026-07-09"
+quote = "Model ID: gpt-5.6-sol"
+
+[[sources]]
+claim = "availability and pricing: limited preview and API input, cached-input, and output token prices"
+url = "https://help.openai.com/en/articles/20001325-a-preview-of-gpt-5-6-sol-terra-and-luna"
+accessed = "2026-07-09"
+quote = "A preview of GPT-5.6 Sol, Terra, and Luna"

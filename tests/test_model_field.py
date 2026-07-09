@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from ringer import (  # noqa: E402
     Manifest,
     TaskSpec,
     build_worker_command,
+    built_in_codex_engine,
     load_engines,
     preflight_engine_bins,
     validate_manifest_engines,
@@ -45,11 +47,33 @@ def harness_engine(model_default: str = "openrouter/z-ai/glm-5.2") -> EngineConf
     )
 
 
-def codex_like_engine() -> EngineConfig:
+def codex_like_engine(model_default: str = "gpt-5.5") -> EngineConfig:
     return EngineConfig(
         name="codex",
         bin="/usr/local/bin/codex",
-        args_template=("exec", "-C", "{taskdir}", "{spec}"),
+        args_template=(
+            "exec",
+            "--skip-git-repo-check",
+            "{access_args}",
+            "{engine_args}",
+            "-m",
+            "{model}",
+            "-C",
+            "{taskdir}",
+            "{spec}",
+        ),
+        full_access_args=("--dangerously-bypass-approvals-and-sandbox",),
+        sandbox_args=("--sandbox", "workspace-write"),
+        token_regex=None,
+        model_default=model_default,
+    )
+
+
+def non_model_engine() -> EngineConfig:
+    return EngineConfig(
+        name="worker",
+        bin="/usr/local/bin/worker",
+        args_template=("run", "-C", "{taskdir}", "{spec}"),
         full_access_args=(),
         sandbox_args=(),
         token_regex=None,
@@ -57,6 +81,17 @@ def codex_like_engine() -> EngineConfig:
 
 
 class ModelPlaceholderTests(unittest.TestCase):
+    def test_built_in_codex_engine_never_inherits_cli_default(self) -> None:
+        engine = built_in_codex_engine()
+        command = build_worker_command(
+            engine,
+            taskdir=Path("/tmp/codex-task"),
+            spec="implement it",
+            full_access=False,
+        )
+        self.assertEqual("gpt-5.5", engine.model_default)
+        self.assertEqual("gpt-5.5", command[command.index("-m") + 1])
+
     def test_model_default_fills_placeholder(self) -> None:
         cmd = build_worker_command(
             harness_engine(), taskdir=Path("/tmp/t"), spec="do it", full_access=False
@@ -72,6 +107,65 @@ class ModelPlaceholderTests(unittest.TestCase):
             model="openrouter/moonshotai/kimi-k2.7-code",
         )
         self.assertEqual("openrouter/moonshotai/kimi-k2.7-code", cmd[cmd.index("-m") + 1])
+
+    def test_codex_task_model_overrides_default_and_preserves_arguments(self) -> None:
+        cmd = build_worker_command(
+            codex_like_engine(),
+            taskdir=Path("/tmp/codex-task"),
+            spec="implement it",
+            full_access=False,
+            engine_args=("-c", "model_reasoning_effort=low"),
+            model="gpt-5.6-terra",
+        )
+        self.assertEqual(
+            [
+                "/usr/local/bin/codex",
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
+                "-c",
+                "model_reasoning_effort=low",
+                "-m",
+                "gpt-5.6-terra",
+                "-C",
+                "/tmp/codex-task",
+                "implement it",
+            ],
+            cmd,
+        )
+
+    def test_codex_uses_gpt55_default_when_task_model_is_omitted(self) -> None:
+        cmd = build_worker_command(
+            codex_like_engine(),
+            taskdir=Path("/tmp/codex-task"),
+            spec="implement it",
+            full_access=False,
+        )
+        self.assertEqual("gpt-5.5", cmd[cmd.index("-m") + 1])
+
+    def test_sample_codex_engine_is_explicitly_model_routable(self) -> None:
+        with (ROOT / "config.sample.toml").open("rb") as handle:
+            sample = tomllib.load(handle)
+        codex = load_engines(sample["engines"])["codex"]
+
+        default_cmd = build_worker_command(
+            codex, taskdir=Path("/tmp/t"), spec="do it", full_access=False
+        )
+        routed_cmd = build_worker_command(
+            codex,
+            taskdir=Path("/tmp/t"),
+            spec="do it",
+            full_access=False,
+            model="gpt-5.6-sol",
+        )
+
+        self.assertEqual("gpt-5.5", codex.model_default)
+        self.assertEqual("gpt-5.5", default_cmd[default_cmd.index("-m") + 1])
+        self.assertEqual("gpt-5.6-sol", routed_cmd[routed_cmd.index("-m") + 1])
+        self.assertIn("--sandbox", routed_cmd)
+        self.assertEqual("/tmp/t", routed_cmd[routed_cmd.index("-C") + 1])
+        self.assertEqual("do it", routed_cmd[-1])
 
     def test_task_spec_parses_and_validates_model(self) -> None:
         task = TaskSpec.from_obj(
@@ -147,8 +241,8 @@ class ModelValidationTests(unittest.TestCase):
         return task
 
     def test_model_on_non_harness_engine_is_rejected(self) -> None:
-        config = self.config({"codex": codex_like_engine()})
-        manifest = self.manifest(self.base_task(engine="codex", model="openrouter/x"))
+        config = self.config({"worker": non_model_engine()})
+        manifest = self.manifest(self.base_task(engine="worker", model="openrouter/x"))
         with self.assertRaisesRegex(ValueError, "silently ignored"):
             validate_manifest_engines(manifest, config)
 

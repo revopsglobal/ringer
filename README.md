@@ -4,6 +4,11 @@
 
 **Parallel AI-agent swarms that prove their work. Your expensive model plans and reviews; cheap workers do the typing.**
 
+The cost-safe routing policy is documented in
+[docs/model-routing-plan.md](docs/model-routing-plan.md): Ringer pins a
+standard worker model, requires explicit per-task escalation, and never
+inherits a changing provider or CLI default.
+
 Frontier models are finally good enough to trust with real implementation — but their tokens are priced like senior-engineer hours, and most of a build is not senior-engineer work. It's scaffolding, migrations, test suites, batch transforms. Mechanical labor.
 
 So split the roles. Your best model writes the specs and reviews the results. A swarm of cheap workers — Codex, Grok, anything with a CLI — does the implementation in parallel. Your premium budget stops scaling with lines of code written and starts scaling with decisions made.

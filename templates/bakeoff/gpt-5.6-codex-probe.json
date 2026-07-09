@@ -1,0 +1,49 @@
+{
+  "run_name": "gpt-5.6-codex-probe",
+  "workdir": "/tmp/ringer-gpt-5.6-codex-probe",
+  "max_parallel": 3,
+  "tasks": [
+    {
+      "key": "gpt-5.6-sol",
+      "engine": "codex",
+      "task_type": "probe",
+      "model": "gpt-5.6-sol",
+      "spec": "Implement the same small deterministic Python scenario used by every cell in this probe. In the current task directory, create slugify.py with a function slugify(value: str) -> str that strips leading and trailing whitespace, lowercases ASCII letters, replaces each nonempty run of non-alphanumeric characters with one hyphen, and strips leading and trailing hyphens. Create test_slugify.py using unittest with cases proving that ' Hello, World! ' becomes 'hello-world', 'Already--Clean' becomes 'already-clean', and '___' becomes an empty string. Use only the Python standard library, do not read or modify files outside the current task directory, and run python3 -m unittest -v test_slugify.py before finishing.",
+      "check": "python3 -m unittest -v test_slugify.py",
+      "expect_files": [
+        "slugify.py",
+        "test_slugify.py"
+      ],
+      "timeout_s": 300,
+      "verified": "the generated unittest suite executes the deterministic slugify behavior and passes"
+    },
+    {
+      "key": "gpt-5.6-terra",
+      "engine": "codex",
+      "task_type": "probe",
+      "model": "gpt-5.6-terra",
+      "spec": "Implement the same small deterministic Python scenario used by every cell in this probe. In the current task directory, create slugify.py with a function slugify(value: str) -> str that strips leading and trailing whitespace, lowercases ASCII letters, replaces each nonempty run of non-alphanumeric characters with one hyphen, and strips leading and trailing hyphens. Create test_slugify.py using unittest with cases proving that ' Hello, World! ' becomes 'hello-world', 'Already--Clean' becomes 'already-clean', and '___' becomes an empty string. Use only the Python standard library, do not read or modify files outside the current task directory, and run python3 -m unittest -v test_slugify.py before finishing.",
+      "check": "python3 -m unittest -v test_slugify.py",
+      "expect_files": [
+        "slugify.py",
+        "test_slugify.py"
+      ],
+      "timeout_s": 300,
+      "verified": "the generated unittest suite executes the deterministic slugify behavior and passes"
+    },
+    {
+      "key": "gpt-5.6-luna",
+      "engine": "codex",
+      "task_type": "probe",
+      "model": "gpt-5.6-luna",
+      "spec": "Implement the same small deterministic Python scenario used by every cell in this probe. In the current task directory, create slugify.py with a function slugify(value: str) -> str that strips leading and trailing whitespace, lowercases ASCII letters, replaces each nonempty run of non-alphanumeric characters with one hyphen, and strips leading and trailing hyphens. Create test_slugify.py using unittest with cases proving that ' Hello, World! ' becomes 'hello-world', 'Already--Clean' becomes 'already-clean', and '___' becomes an empty string. Use only the Python standard library, do not read or modify files outside the current task directory, and run python3 -m unittest -v test_slugify.py before finishing.",
+      "check": "python3 -m unittest -v test_slugify.py",
+      "expect_files": [
+        "slugify.py",
+        "test_slugify.py"
+      ],
+      "timeout_s": 300,
+      "verified": "the generated unittest suite executes the deterministic slugify behavior and passes"
+    }
+  ]
+}

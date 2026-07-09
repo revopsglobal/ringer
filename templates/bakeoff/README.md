@@ -35,6 +35,16 @@ The manifest invokes `checks/bakeoff.py`. The validator checks the evaluator rep
 
 This catches the specific bakeoff failure mode from prior runs: task keys named different competitors while the engine block ran one hard-coded model. A real bakeoff has the candidate in the per-task `model` field and verifies the model column or run metadata.
 
+## GPT-5.6 Codex probe
+
+`gpt-5.6-codex-probe.json` is non-auto-executing scaffolding for comparing the three limited-preview GPT-5.6 Codex model IDs. Its three cells use the exact same deterministic Python scenario and test command; only the explicit per-task `model` field changes. Lint it to validate the scaffold:
+
+```bash
+./ringer.py lint templates/bakeoff/gpt-5.6-codex-probe.json
+```
+
+Linting does not call a model. Do not run this manifest unless preview access and paid execution have been separately authorized.
+
 ## Mix with
 
 - `focus-group`: use focus-group to define fixed personas and then bakeoff models against those same scenario rows.

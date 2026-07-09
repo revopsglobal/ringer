@@ -38,6 +38,7 @@ jsonl_path = "~/.ringer/runs.jsonl"
 # Public default resolves this with shutil.which("codex"). Set an absolute path
 # here only for machine-specific installs.
 bin = "codex"
+model_default = "gpt-5.5"
 
 # Placeholders:
 # - {taskdir}: task working directory
@@ -46,11 +47,15 @@ bin = "codex"
 # - {engine_args}: expands to the task's optional "engine_args" list — the orchestrator
 #   sets per-task flags here, e.g. ["-c", "model_reasoning_effort=medium"] to match
 #   reasoning depth to task difficulty instead of inheriting the CLI-wide default
+# - {model}: expands to the task's optional "model" field, falling back to
+#   model_default above
 args_template = [
   "exec",
   "--skip-git-repo-check",
   "{access_args}",
   "{engine_args}",
+  "-m",
+  "{model}",
   "-C",
   "{taskdir}",
   "{spec}",
