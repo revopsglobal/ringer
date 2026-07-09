@@ -114,6 +114,12 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 
 Not sure what your tasks even are yet? [`docs/interview-prompt.md`](docs/interview-prompt.md) is a prompt you paste into any chatbot; it interviews you about the job and hands back a brief your orchestrating agent can turn into a manifest. Ready-made skeletons for the patterns that work live in [`templates/`](templates/).
 
+### Plan and run in Ringside
+
+Open `http://127.0.0.1:8700/` and choose **Plan / Run** to build the orchestration plan in the browser. Each task must name its task type, worker engine, exact model, reasoning level, bounded objective, executed check, proof statement, and expected files. The form validates the generated manifest before launch and saves the routing receipt under `~/.ringer/plans/`.
+
+Cheap and standard lanes are available without a spend approval. GPT-5.6 lanes are escalation choices: Ringside shows a premium gate and will not launch them until the operator explicitly approves the named tasks and records a reason. The server enforces the same policy even if a client bypasses the form.
+
 ## Lint
 
 Lint checks a manifest for the mistakes that make swarms hard to trust: checks that cannot fail, silent checks, worktree deliverables that disappear, worker commits that die with deleted worktrees, serial fan-out, write collisions, and underspecified specs.

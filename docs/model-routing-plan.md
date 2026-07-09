@@ -4,6 +4,11 @@ Ringer must make the model decision before it starts workers. A worker never
 inherits a provider or CLI default, because that can silently turn a cheap
 batch into a premium run.
 
+The canonical browser entry point is Ringside at `http://127.0.0.1:8700/`.
+Its **Plan / Run** view requires an explicit engine and model for every task,
+persists the routing receipt with the generated manifest, and blocks premium
+launches until the named tasks and reason are approved.
+
 ## Default lanes
 
 | Lane | Harness and model | Use |
