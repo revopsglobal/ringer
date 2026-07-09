@@ -41,6 +41,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Iterable
+from uuid import UUID
 
 
 TOOL_NAME = "ringer"
@@ -481,6 +482,7 @@ class Manifest:
     repo: Path | None
     tasks: tuple[TaskSpec, ...]
     source_path: Path | None = None
+    orch_task_id: str = ""
 
     @classmethod
     def from_path(cls, path: Path) -> "Manifest":
@@ -496,6 +498,7 @@ class Manifest:
             repo=manifest.repo,
             tasks=manifest.tasks,
             source_path=path,
+            orch_task_id=manifest.orch_task_id,
         )
 
     @classmethod
@@ -514,6 +517,15 @@ class Manifest:
             raise ValueError("max_parallel must be positive")
         repo_raw = obj.get("repo")
         repo = Path(str(repo_raw)).expanduser().resolve() if repo_raw else None
+        orch_task_id_raw = obj.get("orch_task_id", "")
+        if not isinstance(orch_task_id_raw, str):
+            raise ValueError("orch_task_id must be a UUID string")
+        orch_task_id = orch_task_id_raw.strip()
+        if orch_task_id:
+            try:
+                orch_task_id = str(UUID(orch_task_id))
+            except ValueError as exc:
+                raise ValueError("orch_task_id must be a valid UUID") from exc
         tasks_raw = obj.get("tasks")
         if not isinstance(tasks_raw, list) or not tasks_raw:
             raise ValueError("tasks must be a non-empty list")
@@ -542,6 +554,7 @@ class Manifest:
             worktrees=worktrees,
             repo=repo,
             tasks=tasks,
+            orch_task_id=orch_task_id,
         )
 
     def with_max_parallel(self, value: int | None) -> "Manifest":
@@ -557,6 +570,7 @@ class Manifest:
             repo=self.repo,
             tasks=self.tasks,
             source_path=self.source_path,
+            orch_task_id=self.orch_task_id,
         )
 
 
@@ -4015,6 +4029,11 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
             <fieldset class="plan-section run-settings">
               <legend>Run settings</legend>
               <div class="plan-grid plan-grid-settings">
+                <label class="plan-field plan-field-wide" for="plan-orch-task-id">
+                  <span>AgentOps task ID</span>
+                  <input id="plan-orch-task-id" name="orch_task_id" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
+                  <small>Optional for standalone runs. When supplied, every receipt links back to the canonical Fleet Task.</small>
+                </label>
                 <label class="plan-field" for="plan-run-name">
                   <span>Run name</span>
                   <input id="plan-run-name" name="run_name" autocomplete="off" required>
@@ -4423,6 +4442,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           };
         });
         const repo = document.getElementById("plan-repo").value.trim();
+        const orchTaskId = document.getElementById("plan-orch-task-id").value.trim();
         const manifest = {
           run_name: document.getElementById("plan-run-name").value.trim(),
           workdir: document.getElementById("plan-workdir").value.trim(),
@@ -4431,6 +4451,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           tasks: manifestTasks,
         };
         if (repo) manifest.repo = repo;
+        if (orchTaskId) manifest.orch_task_id = orchTaskId;
         return manifest;
       }
 
@@ -4465,6 +4486,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
       function draft() {
         return {
           settings: {
+            orch_task_id: document.getElementById("plan-orch-task-id").value,
             run_name: document.getElementById("plan-run-name").value,
             repo: document.getElementById("plan-repo").value,
             workdir: document.getElementById("plan-workdir").value,
@@ -4486,6 +4508,8 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         try { saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch (_error) { }
         const defaults = config?.defaults || {};
         const settings = saved?.settings || {};
+        const queryTaskId = new URLSearchParams(window.location.search).get("orch_task_id") || "";
+        document.getElementById("plan-orch-task-id").value = queryTaskId || settings.orch_task_id || "";
         document.getElementById("plan-run-name").value = settings.run_name || defaults.run_name || "ringer-run";
         document.getElementById("plan-repo").value = settings.repo || "";
         document.getElementById("plan-workdir").value = settings.workdir || defaults.workdir || "";
@@ -4610,7 +4634,9 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           restoreDraft();
           renderTasks();
           setStatus("Plan the work, then validate it before launch.");
-          if (localStorage.getItem(VIEW_KEY) === "plan") selectPlan(false);
+          if (new URLSearchParams(window.location.search).has("orch_task_id") || localStorage.getItem(VIEW_KEY) === "plan") {
+            selectPlan(false);
+          }
         })
         .catch(error => {
           setStatus(error?.message || "Routing policy could not be loaded.", "error");
@@ -5325,17 +5351,19 @@ class EvalLogger:
                 for key, value in row.items()
                 if key not in {"model", "task_type", "retry"}
             }
+            db_row.setdefault("orch_task_id", None)
             try:
                 self._conn.execute(
                     """
                     INSERT INTO swarm_runs (
                         run_id, pattern, task_key, spec, worker_engine, shepherd_model,
-                        verify_method, verdict, duration_ms, worker_tokens, notes, orchestrator
+                        verify_method, verdict, duration_ms, worker_tokens, notes, orchestrator,
+                        orch_task_id
                     )
                     VALUES (
                         %(run_id)s, %(pattern)s, %(task_key)s, %(spec)s, %(worker_engine)s,
                         %(shepherd_model)s, %(verify_method)s, %(verdict)s, %(duration_ms)s,
-                        %(worker_tokens)s, %(notes)s, %(orchestrator)s
+                        %(worker_tokens)s, %(notes)s, %(orchestrator)s, %(orch_task_id)s
                     )
                     """,
                     db_row,
@@ -8134,6 +8162,7 @@ class RingerRunner:
                 "worker_tokens": worker.tokens,
                 "notes": "\n".join(notes_parts),
                 "orchestrator": self.identity,
+                "orch_task_id": self.manifest.orch_task_id or None,
                 "model": resolved_model,
                 "task_type": runtime.task.task_type,
                 "retry": retrying,

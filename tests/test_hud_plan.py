@@ -93,6 +93,7 @@ class HudPlanTests(unittest.TestCase):
 
     def manifest(self, *, model: str = "gpt-5.5") -> dict[str, object]:
         return {
+            "orch_task_id": "8e748b50-f5dc-48e8-bcb5-c193d4c95664",
             "run_name": "plan-test",
             "workdir": str(self.root / "work"),
             "max_parallel": 2,
@@ -133,6 +134,9 @@ class HudPlanTests(unittest.TestCase):
         self.assertEqual(200, response.status)
         self.assertIn('id="plan-tab"', page)
         self.assertIn('id="plan-form"', page)
+        self.assertIn('id="plan-orch-task-id"', page)
+        self.assertIn('new URLSearchParams(window.location.search)', page)
+        self.assertIn('has("orch_task_id")', page)
         self.assertIn('/api/plan/validate', page)
         self.assertIn('/api/plan/run', page)
 
@@ -171,11 +175,23 @@ class HudPlanTests(unittest.TestCase):
         self.assertEqual(4812, payload["pid"])
         manifest_path = Path(str(payload["manifest_path"]))
         saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual("8e748b50-f5dc-48e8-bcb5-c193d4c95664", saved["orch_task_id"])
         self.assertEqual("gpt-5.5", saved["routing"]["task_models"]["implementation"]["model"])
         self.assertFalse(saved["routing"]["premium_approved"])
         command = popen.call_args.args[0]
         self.assertEqual(sys.executable, command[0])
         self.assertIn(str(manifest_path), command)
+
+    def test_invalid_agentops_task_id_is_rejected(self) -> None:
+        manifest = self.manifest()
+        manifest["orch_task_id"] = "not-a-task-id"
+        status, payload = self.request_json(
+            "POST",
+            "/api/plan/validate",
+            {"manifest": manifest},
+        )
+        self.assertEqual(400, status)
+        self.assertIn("orch_task_id must be a valid UUID", str(payload["error"]))
 
 
 if __name__ == "__main__":
