@@ -4358,6 +4358,19 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         return String(value || "ringer-run").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "ringer-run";
       }
 
+      // Workdir mirrors the run name until the user edits workdir by hand.
+      let workdirAuto = true;
+
+      // Derive a per-run workdir from the run name so two runs launched with
+      // form defaults never squat the same directory. The server default ends
+      // with slug(defaults.run_name); swap that tail for the current name.
+      function workdirFor(runName) {
+        const base = String(config?.defaults?.workdir || "");
+        const tail = slug(config?.defaults?.run_name || "ringer-run");
+        if (base.endsWith(tail)) return base.slice(0, base.length - tail.length) + slug(runName);
+        return base;
+      }
+
       function defaultLane() {
         const lanes = Array.isArray(config?.lanes) ? config.lanes : [];
         return lanes.find(lane => lane.id === "standard")?.id || lanes.find(lane => !lane.premium)?.id || lanes[0]?.id || "";
@@ -4510,9 +4523,27 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         const settings = saved?.settings || {};
         const queryTaskId = new URLSearchParams(window.location.search).get("orch_task_id") || "";
         document.getElementById("plan-orch-task-id").value = queryTaskId || settings.orch_task_id || "";
-        document.getElementById("plan-run-name").value = settings.run_name || defaults.run_name || "ringer-run";
+        // Deep-linked from a Fleet Task: default the run identity to the task
+        // (task-<first8>) unless the saved draft already belongs to this task,
+        // in which case the user's own name wins.
+        const sameTaskDraft = Boolean(queryTaskId) && settings.orch_task_id === queryTaskId;
+        const taskRunName = queryTaskId ? `task-${queryTaskId.slice(0, 8)}` : "";
+        // A saved value that merely equals the shared default is not a user
+        // choice; only a name the user actually typed survives a deep-link.
+        const customRunName = settings.run_name && settings.run_name !== (defaults.run_name || "ringer-run")
+          ? settings.run_name : "";
+        const runNameValue =
+          (sameTaskDraft && customRunName) ||
+          taskRunName ||
+          customRunName ||
+          defaults.run_name ||
+          "ringer-run";
+        document.getElementById("plan-run-name").value = runNameValue;
         document.getElementById("plan-repo").value = settings.repo || "";
-        document.getElementById("plan-workdir").value = settings.workdir || defaults.workdir || "";
+        const customWorkdir = settings.workdir && settings.workdir !== defaults.workdir ? settings.workdir : "";
+        const savedWorkdir = (sameTaskDraft || !queryTaskId) ? customWorkdir : "";
+        document.getElementById("plan-workdir").value = savedWorkdir || workdirFor(runNameValue) || defaults.workdir || "";
+        workdirAuto = !savedWorkdir;
         document.getElementById("plan-max-parallel").value = settings.max_parallel || defaults.max_parallel || 2;
         document.getElementById("plan-worktrees").checked = Boolean(settings.worktrees ?? defaults.worktrees);
         premiumApproved.checked = Boolean(saved?.premium_approved);
@@ -4624,6 +4655,10 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
       });
       validateButton.addEventListener("click", validatePlan);
       runButton.addEventListener("click", startRun);
+      document.getElementById("plan-workdir").addEventListener("input", () => { workdirAuto = false; });
+      document.getElementById("plan-run-name").addEventListener("input", event => {
+        if (workdirAuto) document.getElementById("plan-workdir").value = workdirFor(event.target.value);
+      });
 
       fetch("/api/plan", {cache: "no-store"})
         .then(response => response.json().then(payload => ({response, payload})))
