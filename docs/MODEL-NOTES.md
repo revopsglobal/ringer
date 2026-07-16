@@ -269,3 +269,45 @@ checks and raw logs support — no vibes, no worker self-reports.
 ## codex (2026-07-06, bench-operator-proofing)
 - 8/8 code-feature tasks passed attempt 1 across 3 rounds (worktrees mode, Python harness refactor; 108k-406k tokens/task). Specs embedded the approved architecture doc + exact file ownership; checks built fresh uv venvs and ran the full pytest suite.
 - Lesson (check design, not model): all 3 post-integration bugs were invisible to the checks — a test that passed only because the worker's worktree lacked .env, a `--help`-only assertion missing a runtime importlib/sys.modules bug (py3.12 dataclasses), and bare console-script names failing outside activated venvs. Checks should exercise one real invocation from a cold shell, not just --help.
+
+## nvidia/nemotron-3-super-120b-a12b:free
+- 2026-07-08 (docs, agentops-guide): FAILED both attempts. Attempt 1 wasted its budget on find(1) after a bad source path in MY spec (orchestrator error), but attempt 2 died on provider `ResourceExhausted: Worker local total request limit reached` (502) - the free tier is oversubscribed right now. Verdict: do not route real work to this free slot this week; retry the audition after the promo congestion clears.
+
+## z-ai/glm-4.7-flash
+- 2026-07-15 (code-review, agentops security scout audition): PASSED attempt 1 —
+  classified 24 SECURITY DEFINER functions with call-site evidence. Orchestrator
+  spot-check re-grepped 6 revoke_all claims (all clean) and 3 keeps (all cited
+  real file:line). Strong showing for a $0.06/$0.40 model on mechanical
+  classify-with-evidence work; promote toward bigger code-review lanes.
+
+## z-ai/glm-5.2 (addendum)
+- 2026-07-15 (code-review, agentops security scouts): 5 tasks, 3 first-try, 2
+  rescued on retry by the coverage check (scout logs rotated before root-cause;
+  pattern consistent with partial-coverage first drafts). Note: OpenRouter price
+  roughly doubled today (in 0.54->0.98, out 1.76->3.07) — flash just out-value'd
+  it on this task type.
+
+## codex (2026-07-16, agentops-optimization-fixes)
+- 2/2 code-fix tasks passed attempt 1 (queue+killswitch 164k tokens/710s at
+  xhigh; receipt-linkage 71k/235s at high) once two HARNESS bugs were fixed:
+  (1) ~/.codex/config.toml had model_reasoning_effort="max", which the API now
+  rejects (top is xhigh) — every scripted codex exec 400'd; (2) rerunning a
+  manifest whose failed tasks left registered worktrees collides at worktree
+  add and errors instantly with empty check output. Clean stale worktrees
+  before any rerun.
+- Orchestrator spec/check lessons this run: (a) "write ./fix-summary.md" is
+  ambiguous when HOW TO RUN cds into a subdir — say "at the WORKTREE ROOT";
+  (b) gitignore patterns (test-*.sh) silently drop verified new files from
+  git-add-A patch exports — raw worker logs are the recovery path, and checks
+  should cp gitignored deliverables out of the worktree explicitly.
+
+## round-3 addendum (2026-07-16, agentops kanban)
+- codex xhigh: 1/1 first-try on a nuanced UI-state fix (staleness scoping +
+  lane addition + honest counts, 190k tokens/530s) with a 204-line lanes test
+  matching the spec fixture exactly.
+- Check-craft (orchestrator bug): nesting python3 -c "..." inside a
+  double-quoted --verify-command string breaks sh parsing and fails the task
+  at CHECK INVOCATION (both attempts, zero check output). Keep verify-commands
+  to simple && chains; put anything needing quotes in a small script file the
+  check calls. Failed-task worktrees survive — run the corrected check by hand
+  and export the patch rather than re-running the worker.

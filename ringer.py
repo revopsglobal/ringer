@@ -5080,6 +5080,26 @@ class PersistentHudServer:
         server_ref = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_OPTIONS(self) -> None:  # noqa: N802
+                # Chrome Private Network Access: pages on public HTTPS origins
+                # (the AgentOps task drawer) preflight loopback fetches and need
+                # Access-Control-Allow-Private-Network on the OPTIONS response;
+                # the default 501 made a RUNNING Ringside read as "down" there.
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin") or "*")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "*")
+                self.send_header("Access-Control-Max-Age", "86400")
+                self.end_headers()
+
+            def do_HEAD(self) -> None:  # noqa: N802
+                # Liveness probes (curl -I, monitors) previously got 501.
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.end_headers()
+
             def do_GET(self) -> None:  # noqa: N802
                 path = urllib.parse.urlparse(self.path).path
                 if path == "/":
@@ -5315,6 +5335,22 @@ class Dashboard:
         artifact_root = state_path.parent.parent / "artifacts"
 
         class Handler(BaseHTTPRequestHandler):
+            def do_OPTIONS(self) -> None:  # noqa: N802
+                # Same Private Network Access support as the persistent HUD.
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin") or "*")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "*")
+                self.send_header("Access-Control-Max-Age", "86400")
+                self.end_headers()
+
+            def do_HEAD(self) -> None:  # noqa: N802
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+                self.end_headers()
+
             def do_GET(self) -> None:  # noqa: N802
                 path = urllib.parse.urlparse(self.path).path
                 if path == "/":
