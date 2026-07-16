@@ -4358,6 +4358,65 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         return String(value || "ringer-run").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "ringer-run";
       }
 
+      function readAgentOpsPayload() {
+        const raw = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("agentops");
+        if (!raw) return null;
+        try {
+          const payload = JSON.parse(raw);
+          if (!payload || payload.version !== 1 || typeof payload.id !== "string" || typeof payload.title !== "string") return null;
+          return payload;
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      function payloadLines(value) {
+        return Array.isArray(value) ? value.map(item => String(item).trim()).filter(Boolean) : [];
+      }
+
+      function agentOpsSpec(payload) {
+        const statusValue = String(payload?.status || "").trim().toLowerCase();
+        const reviewMode = statusValue === "review" || statusValue === "completed";
+        const sections = [
+          "You are the execution and verification worker for the linked AgentOps Fleet Task. Work only on this task and preserve unrelated user changes.",
+          `AgentOps task ID: ${String(payload?.id || "").trim()}`,
+          `Outcome: ${String(payload?.title || "").trim()}`,
+          statusValue ? `Current task status: ${statusValue}` : "",
+          String(payload?.description || "").trim() ? `Task description:\n${String(payload.description).trim()}` : "",
+          payloadLines(payload?.success_criteria).length ? `Success criteria:\n- ${payloadLines(payload.success_criteria).join("\n- ")}` : "",
+          payloadLines(payload?.out_of_scope).length ? `Out of scope:\n- ${payloadLines(payload.out_of_scope).join("\n- ")}` : "",
+          payloadLines(payload?.source_hierarchy).length ? `Source hierarchy:\n- ${payloadLines(payload.source_hierarchy).join("\n- ")}` : "",
+          String(payload?.result || "").trim() ? `Existing delivery/result evidence:\n${String(payload.result).trim()}` : "",
+          payloadLines(payload?.deliverables).length ? `Existing deliverables:\n- ${payloadLines(payload.deliverables).join("\n- ")}` : "",
+          reviewMode
+            ? "Delivery-state rule: inspect the current repository, Git/PR state, deployment, and other real proof surfaces before changing anything. Preserve work that is already shipped. Repair only verified gaps; do not reimplement completed scope."
+            : "Delivery-state rule: inspect current repository and delivery state before editing so existing work is preserved and duplicated implementation is avoided.",
+          "Safety boundary: follow the repository instructions. Do not mutate production data, secrets, auth, billing, or external communications. Do not touch files outside the verified task scope.",
+          "Output contract: create report.md with the current-state findings, work performed, exact proof handles, and final verification. If no explicit verification command was supplied, also create an executable verify.sh containing task-specific, fail-loud checks; Ringside will execute it independently.",
+        ];
+        return sections.filter(Boolean).join("\n\n");
+      }
+
+      function agentOpsCheck(payload) {
+        const outputCheck = "test -s report.md || { echo 'FAIL: report.md is missing or empty'; exit 1; }";
+        const explicit = String(payload?.check || "").trim();
+        if (explicit) return `${outputCheck}\n${explicit}`;
+        return `${outputCheck}\ntest -x verify.sh || { echo 'FAIL: verify.sh is missing or not executable'; exit 1; }\n./verify.sh`;
+      }
+
+      function agentOpsTask(payload) {
+        const expected = new Set(String(payload?.repo || "").trim() ? [] : ["report.md", ...payloadLines(payload?.expect_files)]);
+        if (!String(payload?.repo || "").trim() && !String(payload?.check || "").trim()) expected.add("verify.sh");
+        const task = newTask(0);
+        task.key = `task-${String(payload?.id || "agentops").slice(0, 8)}`;
+        task.spec = agentOpsSpec(payload);
+        task.check = agentOpsCheck(payload);
+        task.verified = String(payload?.verified || "").trim()
+          || "The linked task has a non-empty execution report and its task-specific verification executes successfully.";
+        task.expect_files = Array.from(expected).join("\n");
+        return task;
+      }
+
       // Workdir mirrors the run name until the user edits workdir by hand.
       let workdirAuto = true;
 
@@ -4526,12 +4585,15 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         const defaults = config?.defaults || {};
         const settings = saved?.settings || {};
         const queryTaskId = new URLSearchParams(window.location.search).get("orch_task_id") || "";
+        const agentOps = readAgentOpsPayload();
         document.getElementById("plan-orch-task-id").value = queryTaskId || settings.orch_task_id || "";
         // Deep-linked from a Fleet Task: default the run identity to the task
         // (task-<first8>) unless the saved draft already belongs to this task,
         // in which case the user's own name wins.
         const sameTaskDraft = Boolean(queryTaskId) && settings.orch_task_id === queryTaskId;
-        const taskRunName = queryTaskId ? `task-${queryTaskId.slice(0, 8)}` : "";
+        const taskRunName = agentOps?.title
+          ? slug(agentOps.title).slice(0, 64)
+          : queryTaskId ? `task-${queryTaskId.slice(0, 8)}` : "";
         // A saved value that merely equals the shared default is not a user
         // choice; only a name the user actually typed survives a deep-link.
         const customRunName = settings.run_name && settings.run_name !== (defaults.run_name || "ringer-run")
@@ -4543,17 +4605,37 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           defaults.run_name ||
           "ringer-run";
         document.getElementById("plan-run-name").value = runNameValue;
-        document.getElementById("plan-repo").value = settings.repo || "";
+        const importedRepo = String(agentOps?.repo || "").trim();
+        document.getElementById("plan-repo").value = (sameTaskDraft ? settings.repo : "") || importedRepo || "";
         const customWorkdir = settings.workdir && settings.workdir !== defaults.workdir ? settings.workdir : "";
         const savedWorkdir = (sameTaskDraft || !queryTaskId) ? customWorkdir : "";
         document.getElementById("plan-workdir").value = savedWorkdir || workdirFor(runNameValue) || defaults.workdir || "";
         workdirAuto = !savedWorkdir;
         document.getElementById("plan-max-parallel").value = settings.max_parallel || defaults.max_parallel || 2;
-        document.getElementById("plan-worktrees").checked = Boolean(settings.worktrees ?? defaults.worktrees);
+        document.getElementById("plan-worktrees").checked = importedRepo
+          ? Boolean(sameTaskDraft ? (settings.worktrees ?? true) : true)
+          : Boolean(settings.worktrees ?? defaults.worktrees);
         premiumApproved.checked = Boolean(saved?.premium_approved);
         premiumReason.value = saved?.premium_reason || "";
         const savedTasks = Array.isArray(saved?.tasks) ? saved.tasks : [];
-        tasks = savedTasks.map((task, index) => ({...newTask(index), ...task}));
+        if (agentOps) {
+          const importedTask = agentOpsTask(agentOps);
+          if (sameTaskDraft && savedTasks.length) {
+            tasks = savedTasks.map((task, index) => ({...newTask(index), ...task}));
+            tasks[0] = {
+              ...importedTask,
+              ...tasks[0],
+              spec: String(tasks[0].spec || "").trim() ? tasks[0].spec : importedTask.spec,
+              check: String(tasks[0].check || "").trim() ? tasks[0].check : importedTask.check,
+              verified: String(tasks[0].verified || "").trim() ? tasks[0].verified : importedTask.verified,
+              expect_files: String(tasks[0].expect_files || "").trim() ? tasks[0].expect_files : importedTask.expect_files,
+            };
+          } else {
+            tasks = [importedTask];
+          }
+        } else {
+          tasks = savedTasks.map((task, index) => ({...newTask(index), ...task}));
+        }
         if (!tasks.length) tasks = [newTask(0)];
         const validLanes = new Set((config?.lanes || []).map(lane => lane.id));
         tasks.forEach(task => { if (!validLanes.has(task.lane)) task.lane = defaultLane(); });
@@ -4603,7 +4685,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         }
       }
 
-      async function startRun() {
+      async function startRun(autoStartKey = "") {
         setBusy(true);
         setStatus("Running final preflight and starting the planned workers…", "working");
         try {
@@ -4611,7 +4693,9 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           preview.textContent = JSON.stringify({...buildManifest(), routing: payload.routing}, null, 2);
           setStatus(`Started ${payload.run_name}. The saved plan is ${payload.manifest_path}.`, "ready");
           localStorage.removeItem(DRAFT_KEY);
+          if (autoStartKey) sessionStorage.setItem(autoStartKey, "started");
         } catch (error) {
+          if (autoStartKey) sessionStorage.removeItem(autoStartKey);
           setStatus(error?.message || "Run could not start.", "error");
         } finally {
           setBusy(false);
@@ -4658,7 +4742,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         saveDraft();
       });
       validateButton.addEventListener("click", validatePlan);
-      runButton.addEventListener("click", startRun);
+      runButton.addEventListener("click", () => startRun());
       document.getElementById("plan-workdir").addEventListener("input", () => { workdirAuto = false; });
       document.getElementById("plan-run-name").addEventListener("input", event => {
         if (workdirAuto) document.getElementById("plan-workdir").value = workdirFor(event.target.value);
@@ -4675,6 +4759,16 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
           setStatus("Plan the work, then validate it before launch.");
           if (new URLSearchParams(window.location.search).has("orch_task_id") || localStorage.getItem(VIEW_KEY) === "plan") {
             selectPlan(false);
+          }
+          const query = new URLSearchParams(window.location.search);
+          const agentOps = readAgentOpsPayload();
+          const autoStartKey = agentOps && query.get("agentops_autostart") === "1"
+            ? `ringside-agentops-autostart-v1:${agentOps.id}`
+            : "";
+          if (autoStartKey && !sessionStorage.getItem(autoStartKey)) {
+            sessionStorage.setItem(autoStartKey, "starting");
+            setStatus("AgentOps handoff loaded. Starting the linked task…", "working");
+            setTimeout(() => startRun(autoStartKey), 0);
           }
         })
         .catch(error => {

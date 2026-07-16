@@ -137,6 +137,10 @@ class HudPlanTests(unittest.TestCase):
         self.assertIn('id="plan-orch-task-id"', page)
         self.assertIn('new URLSearchParams(window.location.search)', page)
         self.assertIn('has("orch_task_id")', page)
+        self.assertIn('window.location.hash.replace(/^#/', page)
+        self.assertIn('agentops_autostart', page)
+        self.assertIn('Starting the linked task', page)
+        self.assertIn("FAIL: verify.sh is missing or not executable", page)
         self.assertIn('/api/plan/validate', page)
         self.assertIn('/api/plan/run', page)
 
