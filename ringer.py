@@ -4415,7 +4415,7 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
               <label class="task-field"><span>Task key</span><input data-field="key" value="${html(task.key)}" required><small>Stable identifier used in logs and artifacts.</small></label>
               <label class="task-field"><span>Task type</span><select data-field="task_type">${options(config?.task_types || [], task.task_type, null, null)}</select><small>Feeds the model-performance scoreboard.</small></label>
               <label class="task-field"><span>Worker lane</span><select data-field="lane">${options(config?.lanes || [], task.lane)}</select><small>${html(laneFor(task)?.description || "Choose an engine and exact model.")}</small></label>
-              <label class="task-field"><span>Reasoning</span><select data-field="reasoning">${options(["low", "medium", "high"], task.reasoning, null, null)}</select><small>Applied to Codex workers only.</small></label>
+              <label class="task-field"><span>Reasoning</span><select data-field="reasoning">${options(["low", "medium", "high"], task.reasoning, null, null)}</select><small>Applied to Codex and Claude workers.</small></label>
             </div>
             <div class="task-content-grid">
               <label class="task-field task-spec"><span>Bounded objective and ownership</span><textarea data-field="spec" placeholder="State the outcome, owned files, constraints, context, and what the worker must not touch." required>${html(task.spec)}</textarea><small>Workers are stateless. Put the complete brief here instead of pointing at another instruction file.</small></label>
@@ -4441,7 +4441,11 @@ def inject_plan_tab_into_ringside_html(html: str) -> str:
         const maxParallel = Number(document.getElementById("plan-max-parallel").value || 1);
         const manifestTasks = tasks.map(task => {
           const lane = laneFor(task);
-          const engineArgs = lane?.engine === "codex" ? ["-c", `model_reasoning_effort=${task.reasoning || "medium"}`] : [];
+          const engineArgs = lane?.engine === "codex"
+            ? ["-c", `model_reasoning_effort=${task.reasoning || "medium"}`]
+            : lane?.engine === "claude"
+              ? ["--effort", task.reasoning || "medium"]
+              : [];
           return {
             key: task.key.trim(),
             task_type: task.task_type,
@@ -4767,6 +4771,27 @@ def build_hud_plan_payload(config: AppConfig) -> dict[str, Any]:
                 "model": config.engines["opencode"].model_default or "openrouter/z-ai/glm-5.2",
                 "premium": False,
                 "description": "Mechanical, tightly checked work and high-volume batches.",
+            }
+        )
+    if "claude" in config.engines and engine_accepts_model(config.engines["claude"]):
+        lanes.append(
+            {
+                "id": "claude-sonnet",
+                "label": "Claude Sonnet",
+                "engine": "claude",
+                "model": config.engines["claude"].model_default or "claude-sonnet-5",
+                "premium": False,
+                "description": "Strong implementation and review on the flat-rate Max plan.",
+            }
+        )
+        lanes.append(
+            {
+                "id": "claude-opus",
+                "label": "Claude Opus",
+                "engine": "claude",
+                "model": "claude-opus-4-8",
+                "premium": False,
+                "description": "Heavy reasoning and hard integration work; flat-rate, but slower.",
             }
         )
     if "codex" in config.engines and engine_accepts_model(config.engines["codex"]):
