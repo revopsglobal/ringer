@@ -109,6 +109,14 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
 
+### Ringside Plan / Run
+
+Persistent Ringside includes a **Plan / Run** tab next to Runs and Models. It builds a normal Ringer manifest in the browser, previews it, validates it through `POST /api/plan/validate`, and launches through the local CLI with `POST /api/plan/run` only after the server revalidates the same manifest.
+
+The normal Codex lane is explicit `model: "gpt-5.5"`. The GPT-5.6 escalation lanes use the exact route IDs `gpt-5.6-terra`, `gpt-5.6-sol`, and `gpt-5.6-luna`; these are premium or candidate routes and are not defaults. Launch rejects any plan using those routes unless `premium_approved` is `true` and `premium_reason` is non-empty. Validation can show the premium routing without starting workers.
+
+Models remains historical performance evidence from executed runs. It helps choose future routing, but Plan / Run is the authoritative place to set the exact per-task `engine`, `model`, `task_type`, and reasoning `engine_args` before launch.
+
 Not sure what your tasks even are yet? [`docs/interview-prompt.md`](docs/interview-prompt.md) is a prompt you paste into any chatbot; it interviews you about the job and hands back a brief your orchestrating agent can turn into a manifest. Ready-made skeletons for the patterns that work live in [`templates/`](templates/).
 
 ## Lint
@@ -357,6 +365,7 @@ Every community PR that lands in main is credited here — that's a project rule
 - [@davekopecek](https://github.com/davekopecek) (Dave Kopecek) — committed the design-reference fixture so the design-token guard runs on every machine (#30)
 - [@snapsynapse](https://github.com/snapsynapse) (Sam Rogers) — graceful shutdown on SIGINT/SIGTERM with worker-tree cleanup and finished state, plus the 14-test end-to-end CLI regression suite (#4)
 - [@mlava](https://github.com/mlava) (Mark Lavercombe) — named setup failures across every diagnostic surface (#37) and `run --baseline`, the no-workers check preflight (#38)
+- [@revopsglobal](https://github.com/revopsglobal) (Greg Harned) — explicit GPT-5.6 routing and premium launch approval in Ringside Plan / Run (#64)
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the philosophy and what gets a PR merged fast. The short version: small and scoped, rebased on current main, every claim backed by an executed test. Authorship is always preserved — where a maintainer pushes a mechanical fix to your branch, you remain the commit author.
 
