@@ -21,6 +21,20 @@ TASKDIR="${1:?usage: opencode-sandboxed.sh <taskdir> [--no-sandbox] <args...>}";
 SANDBOX=1
 if [ "${1:-}" = "--no-sandbox" ]; then SANDBOX=0; shift; fi
 
+# Read-only access to paths outside the task dir is the whole point of a review
+# swarm (the task dir holds only report.md; the source repo lives elsewhere), but
+# OpenCode gates that behind a separate `external_directory` permission that
+# --dangerously-skip-permissions does NOT cover. In a headless run each access
+# still emits a permission.asked event, which any attached observer (the
+# CodeIsland OpenCode plugin, for one) renders as an approval card that appears
+# and vanishes milliseconds later — hundreds of times per run. Containment here
+# is the Seatbelt profile below, not OpenCode's prompt: writes stay confined to
+# the task dir either way. OPENCODE_PERMISSION is merged into config.permission,
+# so this overrides the default without touching the user's own config.
+if [ -z "${OPENCODE_PERMISSION:-}" ]; then
+  export OPENCODE_PERMISSION='{"external_directory":"allow"}'
+fi
+
 # Resolve opencode without tripping `set -e` (command -v returns nonzero when absent).
 if ! OPENCODE_BIN="$(command -v opencode)" || [ -z "$OPENCODE_BIN" ]; then
   echo "opencode-sandboxed.sh: opencode not found on PATH" >&2
