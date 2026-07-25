@@ -110,6 +110,26 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
 
+### AgentOps-linked runs
+
+`orch_task_id` links a one-task Ringer run to an existing canonical AgentOps
+task. It does not make Ringer a queue: another request-serving component still
+owns capture, approval, and process start.
+
+Configure the verified callback outside the manifest:
+
+```bash
+export RINGER_AGENTOPS_CALLBACK_URL=http://127.0.0.1:8788/internal/v1/tasks/<task-uuid>/receipt
+export RINGER_AGENTOPS_TOKEN_FILE=/run/credentials/<unit>/agentops_worker_token
+./ringer.py --no-self-update run manifest.json --no-dashboard
+```
+
+The token file must be a regular private file. Non-loopback callback URLs must
+use HTTPS. Ringer sends the canonical task UUID, run ID, resolved engine/model,
+executed check, exit code, timeout state, duration, and verdict. It exits
+nonzero when a linked final callback cannot be persisted, even if the local
+check passed. The callback never contains the token or callback configuration.
+
 ### Ringside Plan / Run
 
 Persistent Ringside includes a **Plan / Run** tab next to Runs and Models. It builds a normal Ringer manifest in the browser, previews it, validates it through `POST /api/plan/validate`, and launches through the local CLI with `POST /api/plan/run` only after the server revalidates the same manifest.

@@ -13,6 +13,7 @@ import shlex
 import signal
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 
@@ -32,6 +33,7 @@ import time
 import tomllib
 import urllib.parse
 import urllib.request
+import urllib.error
 import uuid
 import webbrowser
 from dataclasses import dataclass, field, replace as dataclass_replace
@@ -1174,6 +1176,216 @@ class Manifest:
             orch_task_id=self.orch_task_id,
             source_path=self.source_path,
         )
+
+
+@dataclass(frozen=True)
+class AgentOpsCallbackConfig:
+    url: str
+    token_file: Path
+    timeout_s: float = 10.0
+    retries: int = 3
+
+
+class AgentOpsCallbackError(RuntimeError):
+    pass
+
+
+def load_agentops_callback_config(
+    manifest: Manifest,
+    environment: dict[str, str] | os._Environ[str] | None = None,
+) -> AgentOpsCallbackConfig | None:
+    if manifest.orch_task_id is None:
+        return None
+    env = environment if environment is not None else os.environ
+    url = str(env.get("RINGER_AGENTOPS_CALLBACK_URL", "")).strip()
+    token_file_value = str(
+        env.get("RINGER_AGENTOPS_TOKEN_FILE", "")
+    ).strip()
+    if not url or not token_file_value:
+        raise ValueError(
+            "AgentOps-linked run requires "
+            "RINGER_AGENTOPS_CALLBACK_URL and RINGER_AGENTOPS_TOKEN_FILE"
+        )
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.username or parsed.password:
+        raise ValueError("AgentOps callback URL must not contain credentials")
+    loopback_hosts = {"127.0.0.1", "::1", "localhost"}
+    if parsed.scheme == "https":
+        pass
+    elif parsed.scheme == "http" and parsed.hostname in loopback_hosts:
+        pass
+    else:
+        raise ValueError(
+            "AgentOps callback URL must use HTTPS or loopback HTTP"
+        )
+    if not parsed.hostname or parsed.fragment:
+        raise ValueError("AgentOps callback URL is invalid")
+
+    token_file = Path(token_file_value).expanduser()
+    try:
+        token_stat = token_file.lstat()
+    except OSError:
+        raise ValueError("AgentOps callback token file is unavailable") from None
+    if token_file.is_symlink() or not stat.S_ISREG(token_stat.st_mode):
+        raise ValueError("AgentOps callback token file must be a regular file")
+    if token_stat.st_mode & 0o077:
+        raise ValueError(
+            "AgentOps callback token file must not be group/world accessible"
+        )
+    try:
+        token = token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        raise ValueError("AgentOps callback token file is unreadable") from None
+    if not token or len(token) > 8192:
+        raise ValueError("AgentOps callback token file is invalid")
+
+    try:
+        timeout_s = float(env.get("RINGER_AGENTOPS_CALLBACK_TIMEOUT_S", "10"))
+        retries = int(env.get("RINGER_AGENTOPS_CALLBACK_RETRIES", "3"))
+    except ValueError:
+        raise ValueError("AgentOps callback retry configuration is invalid") from None
+    if not 0 < timeout_s <= 60 or not 1 <= retries <= 10:
+        raise ValueError("AgentOps callback retry configuration is invalid")
+    return AgentOpsCallbackConfig(
+        url=url,
+        token_file=token_file,
+        timeout_s=timeout_s,
+        retries=retries,
+    )
+
+
+def redact_agentops_callback_text(value: str) -> str:
+    redacted = re.sub(
+        r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+",
+        r"\1[REDACTED]",
+        value,
+    )
+    redacted = re.sub(
+        r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)\b(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{6,}",
+        "[REDACTED]",
+        redacted,
+    )
+    return re.sub(
+        r"(?i)(https?://)[^/@\s]+@",
+        r"\1[REDACTED]@",
+        redacted,
+    )
+
+
+def build_agentops_callback_payload(
+    manifest: Manifest,
+    run_id: str,
+    identity: str,
+    runtimes: list["TaskRuntime"],
+    engines: dict[str, EngineConfig],
+) -> dict[str, Any]:
+    if manifest.orch_task_id is None:
+        raise AgentOpsCallbackError("AgentOps callback requires a linked task")
+    now = time.monotonic()
+    tasks: list[dict[str, Any]] = []
+    for runtime in runtimes:
+        engine = engines.get(runtime.task.engine)
+        notes = "\n".join(
+            item
+            for item in (
+                runtime.setup_error or "",
+                runtime.last_check_output or "",
+            )
+            if item
+        )
+        tasks.append({
+            "key": runtime.task.key,
+            "engine": runtime.task.engine,
+            "model": resolved_task_model(
+                runtime.task,
+                engine,
+                runtime.last_worker_command,
+            ),
+            "verdict": runtime.final_verdict or "ERROR",
+            "check_returncode": runtime.last_check_returncode,
+            "check_timed_out": runtime.last_check_timed_out,
+            "verify_method": runtime.task.check,
+            "duration_ms": int(runtime.elapsed_s(now) * 1000),
+            "worker_tokens": runtime.tokens,
+            "notes": redact_agentops_callback_text(notes)[:4000],
+        })
+    verdict = (
+        "PASS"
+        if tasks and all(task["verdict"] == "PASS" for task in tasks)
+        else str(tasks[0]["verdict"] if tasks else "ERROR")
+    )
+    return {
+        "version": 1,
+        "orch_task_id": manifest.orch_task_id,
+        "run_id": run_id,
+        "run_name": manifest.run_name,
+        "identity": identity,
+        "verdict": verdict,
+        "tasks": tasks,
+    }
+
+
+def deliver_agentops_callback(
+    config: AgentOpsCallbackConfig,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        token = config.token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        raise AgentOpsCallbackError(
+            "AgentOps callback token became unavailable"
+        ) from None
+    if not token or len(token) > 8192:
+        raise AgentOpsCallbackError("AgentOps callback token is invalid")
+    body = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    run_id = str(payload.get("run_id", "")).strip()
+    if not run_id:
+        raise AgentOpsCallbackError("AgentOps callback run_id is missing")
+
+    last_status: int | None = None
+    for attempt in range(1, config.retries + 1):
+        request = urllib.request.Request(
+            config.url,
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Idempotency-Key": run_id,
+            },
+        )
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=config.timeout_s,
+            ) as response:
+                last_status = int(response.status)
+                if 200 <= last_status < 300:
+                    return
+        except urllib.error.HTTPError as error:
+            last_status = int(error.code)
+        except (OSError, urllib.error.URLError):
+            last_status = None
+        if attempt < config.retries:
+            time.sleep(min(0.05 * attempt, 0.2))
+    detail = (
+        f"HTTP {last_status}"
+        if last_status is not None
+        else "transport unavailable"
+    )
+    raise AgentOpsCallbackError(
+        f"AgentOps callback failed after {config.retries} attempts ({detail})"
+    )
 
 
 FILE_TEST_OPS = {"-e", "-f", "-s", "-d", "-r", "-w", "-x", "-L"}
@@ -8592,6 +8804,7 @@ class RingerRunner:
         self.config = config
         self.identity = identity
         self.dashboard_enabled = dashboard_enabled
+        self.agentops_callback = load_agentops_callback_config(manifest)
         self.run_id = build_run_id(manifest.run_name)
         self.started_at = datetime.now(timezone.utc)
         self.lock = threading.RLock()
@@ -8627,13 +8840,18 @@ class RingerRunner:
     async def run(self) -> int:
         self.manifest.workdir.mkdir(parents=True, exist_ok=True)
         final_state = False
+        exit_code = 1
         try:
             self.state_writer.start()
             if self.dashboard is not None:
                 self.state_writer.set_port(self.dashboard.start())
             await asyncio.gather(*(self._run_task(runtime) for runtime in self.runtimes))
             final_state = True
-            return 0 if all(runtime.status == "pass" for runtime in self.runtimes) else 1
+            exit_code = (
+                0
+                if all(runtime.status == "pass" for runtime in self.runtimes)
+                else 1
+            )
         except asyncio.CancelledError:
             await self.kill_all_workers()
             with self.lock:
@@ -8661,6 +8879,20 @@ class RingerRunner:
                     results_page = artifact_live_path(self.state_writer.state_dir, self.manifest.run_name)
                     print(f"\nYour results: {results_page}")
                     print("Open it in a browser, or run './ringer.py hud' for the full Ringside view (http://127.0.0.1:8700).")
+        if self.agentops_callback is not None:
+            payload = build_agentops_callback_payload(
+                self.manifest,
+                self.run_id,
+                self.identity,
+                self.runtimes,
+                self.config.engines,
+            )
+            try:
+                deliver_agentops_callback(self.agentops_callback, payload)
+            except AgentOpsCallbackError as error:
+                print(str(error), file=sys.stderr)
+                return 2
+        return exit_code
 
     async def kill_all_workers(self) -> None:
         procs = list(self.active_processes.values())
