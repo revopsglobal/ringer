@@ -32,6 +32,7 @@ import time
 import tomllib
 import urllib.parse
 import urllib.request
+import uuid
 import webbrowser
 from dataclasses import dataclass, field, replace as dataclass_replace
 from datetime import datetime, timezone
@@ -1073,6 +1074,7 @@ class Manifest:
     worktrees: bool
     repo: Path | None
     tasks: tuple[TaskSpec, ...]
+    orch_task_id: str | None = None
     source_path: Path | None = None
 
     @classmethod
@@ -1088,6 +1090,7 @@ class Manifest:
             worktrees=manifest.worktrees,
             repo=manifest.repo,
             tasks=manifest.tasks,
+            orch_task_id=manifest.orch_task_id,
             source_path=path,
         )
 
@@ -1116,6 +1119,24 @@ class Manifest:
         if duplicates:
             raise ValueError(f"duplicate task keys: {', '.join(duplicates)}")
         worktrees = bool(obj.get("worktrees", False))
+        orch_task_id_raw = obj.get("orch_task_id")
+        orch_task_id: str | None = None
+        if orch_task_id_raw is not None:
+            if not isinstance(orch_task_id_raw, str):
+                raise ValueError("orch_task_id must be a canonical UUID")
+            try:
+                parsed_task_id = uuid.UUID(orch_task_id_raw)
+            except (AttributeError, ValueError):
+                raise ValueError(
+                    "orch_task_id must be a canonical UUID"
+                ) from None
+            if str(parsed_task_id) != orch_task_id_raw:
+                raise ValueError("orch_task_id must be a canonical UUID")
+            orch_task_id = orch_task_id_raw
+            if len(tasks) != 1 or max_parallel != 1:
+                raise ValueError(
+                    "AgentOps-linked manifests require exactly one task and max_parallel=1"
+                )
         if worktrees:
             reserved_logs_dir = (workdir / "logs").resolve()
             collisions = []
@@ -1135,6 +1156,7 @@ class Manifest:
             worktrees=worktrees,
             repo=repo,
             tasks=tasks,
+            orch_task_id=orch_task_id,
         )
 
     def with_max_parallel(self, value: int | None) -> "Manifest":
@@ -1149,6 +1171,7 @@ class Manifest:
             worktrees=self.worktrees,
             repo=self.repo,
             tasks=self.tasks,
+            orch_task_id=self.orch_task_id,
             source_path=self.source_path,
         )
 
@@ -1541,6 +1564,7 @@ class StateWriter:
         max_parallel: int = 1,
         artifact: ArtifactConfig | None = None,
         path: Path | None = None,
+        orch_task_id: str | None = None,
     ) -> None:
         self.run_id = run_id
         self.run_name = run_name
@@ -1550,6 +1574,7 @@ class StateWriter:
         self.runtimes = runtimes
         self.lock = lock
         self.max_parallel = max_parallel
+        self.orch_task_id = orch_task_id
         self.state_dir = state_dir
         self.path = path or (state_dir / "runs" / f"{run_id}.json")
         self.pid = os.getpid()
@@ -1682,6 +1707,7 @@ class StateWriter:
                 "port": self.port,
                 "dashboard_port": self.port,
                 "max_parallel": self.max_parallel,
+                "orch_task_id": self.orch_task_id,
                 "finished": self.finished,
                 "summary": self.summary if self.finished else None,
                 "started_at": self.started_at.isoformat(),
@@ -8581,6 +8607,7 @@ class RingerRunner:
             self.lock,
             max_parallel=manifest.max_parallel,
             artifact=config.artifact,
+            orch_task_id=manifest.orch_task_id,
         )
         self.dashboard = (
             Dashboard(
@@ -9886,6 +9913,8 @@ def dry_run(
     print(f"Workdir: {manifest.workdir}")
     print(f"Max parallel: {manifest.max_parallel}")
     print(f"Worktrees: {manifest.worktrees} repo={manifest.repo}")
+    if manifest.orch_task_id is not None:
+        print(f"AgentOps task: {manifest.orch_task_id}")
     print(f"State dir: {config.state_dir}")
     print(f"Eval backend: {config.eval.backend}")
     print(f"Dashboard: {'on' if dashboard_enabled else 'off'}")

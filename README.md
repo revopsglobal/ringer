@@ -106,6 +106,7 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 | `verified` | One plain-English sentence saying what the check proves — shown on the results page next to "finished & checked" |
 | `full_access` | Worker runs unsandboxed — required for workers that spawn their own sub-workers; must also be enabled in config |
 | `worktrees` (run-level) | Give each task an isolated git worktree of `repo` so parallel workers can't collide |
+| `orch_task_id` (run-level) | Optional canonical AgentOps task UUID. A linked manifest is deliberately bounded to one task with `max_parallel: 1`; Ringer carries the UUID in state and, when configured, its verified callback. |
 
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
 
