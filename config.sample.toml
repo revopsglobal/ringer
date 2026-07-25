@@ -51,6 +51,18 @@ jsonl_path = "~/.ringer/runs.jsonl"
 # [eval.postgres]
 # env_file = "~/.supabase.env"
 
+# AgentOps-linked runs are configured outside the manifest so callback
+# credentials cannot be committed with task specs. When a manifest supplies
+# orch_task_id, set:
+#   RINGER_AGENTOPS_CALLBACK_URL=https://example.test/internal/receipt
+#   RINGER_AGENTOPS_TOKEN_FILE=/run/credentials/<unit>/agentops_worker_token
+# Optional bounded transport controls:
+#   RINGER_AGENTOPS_CALLBACK_TIMEOUT_S=10
+#   RINGER_AGENTOPS_CALLBACK_RETRIES=3
+# Loopback HTTP is accepted for a same-host gateway; every non-loopback URL
+# must use HTTPS. The token file must be a regular file with no group/world
+# permissions.
+
 [engines.codex]
 # Public default resolves this with shutil.which("codex"). Set an absolute path
 # here only for machine-specific installs.

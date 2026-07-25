@@ -106,8 +106,29 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 | `verified` | One plain-English sentence saying what the check proves — shown on the results page next to "finished & checked" |
 | `full_access` | Worker runs unsandboxed — required for workers that spawn their own sub-workers; must also be enabled in config |
 | `worktrees` (run-level) | Give each task an isolated git worktree of `repo` so parallel workers can't collide |
+| `orch_task_id` (run-level) | Optional canonical AgentOps task UUID. A linked manifest is deliberately bounded to one task with `max_parallel: 1`; Ringer carries the UUID in state and, when configured, its verified callback. |
 
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
+
+### AgentOps-linked runs
+
+`orch_task_id` links a one-task Ringer run to an existing canonical AgentOps
+task. It does not make Ringer a queue: another request-serving component still
+owns capture, approval, and process start.
+
+Configure the verified callback outside the manifest:
+
+```bash
+export RINGER_AGENTOPS_CALLBACK_URL=http://127.0.0.1:8788/internal/v1/tasks/<task-uuid>/receipt
+export RINGER_AGENTOPS_TOKEN_FILE=/run/credentials/<unit>/agentops_worker_token
+./ringer.py --no-self-update run manifest.json --no-dashboard
+```
+
+The token file must be a regular private file. Non-loopback callback URLs must
+use HTTPS. Ringer sends the canonical task UUID, run ID, resolved engine/model,
+executed check, exit code, timeout state, duration, and verdict. It exits
+nonzero when a linked final callback cannot be persisted, even if the local
+check passed. The callback never contains the token or callback configuration.
 
 ### Ringside Plan / Run
 
