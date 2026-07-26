@@ -60,8 +60,8 @@ jsonl_path = "~/.ringer/runs.jsonl"
 #   RINGER_AGENTOPS_CALLBACK_TIMEOUT_S=10
 #   RINGER_AGENTOPS_CALLBACK_RETRIES=3
 # Loopback HTTP is accepted for a same-host gateway; every non-loopback URL
-# must use HTTPS. The token file must be a regular file with no group/world
-# permissions.
+# must use HTTPS. The token file must be a regular file using mode 0400, 0440,
+# 0600, or 0640; group-read supports a dedicated systemd service group.
 
 [engines.codex]
 # Public default resolves this with shutil.which("codex"). Set an absolute path
