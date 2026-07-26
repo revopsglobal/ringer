@@ -209,8 +209,18 @@ class AgentOpsCallbackTests(unittest.TestCase):
         result = self.run_ringer(self.write_manifest())
 
         self.assertEqual(result.returncode, 2, result.stdout)
-        self.assertIn("token file must not be group/world accessible", result.stdout)
+        self.assertIn(
+            "token file must use mode 0400, 0440, 0600, or 0640",
+            result.stdout,
+        )
         self.assertNotIn(TOKEN, result.stdout)
+
+    def test_systemd_projected_token_modes_are_accepted(self) -> None:
+        for mode in (0o400, 0o440, 0o600, 0o640):
+            with self.subTest(mode=oct(mode)):
+                self.token_path.chmod(mode)
+                result = self.run_ringer(self.write_manifest())
+                self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_pass_callback_is_scoped_and_contains_executed_check(self) -> None:
         server = self.server()

@@ -1229,9 +1229,11 @@ def load_agentops_callback_config(
         raise ValueError("AgentOps callback token file is unavailable") from None
     if token_file.is_symlink() or not stat.S_ISREG(token_stat.st_mode):
         raise ValueError("AgentOps callback token file must be a regular file")
-    if token_stat.st_mode & 0o077:
+    private_modes = {0o400, 0o440, 0o600, 0o640}
+    if stat.S_IMODE(token_stat.st_mode) not in private_modes:
         raise ValueError(
-            "AgentOps callback token file must not be group/world accessible"
+            "AgentOps callback token file must use mode "
+            "0400, 0440, 0600, or 0640"
         )
     try:
         token = token_file.read_text(encoding="utf-8").strip()
