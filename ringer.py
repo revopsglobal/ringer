@@ -1308,7 +1308,7 @@ def build_agentops_callback_payload(
                 runtime.task,
                 engine,
                 runtime.last_worker_command,
-            ),
+            ) or None,
             "verdict": runtime.final_verdict or "ERROR",
             "check_returncode": runtime.last_check_returncode,
             "check_timed_out": runtime.last_check_timed_out,
