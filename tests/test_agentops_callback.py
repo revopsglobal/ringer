@@ -250,6 +250,20 @@ class AgentOpsCallbackTests(unittest.TestCase):
         self.assertNotIn(TOKEN, request["body"].decode())
         self.assertNotIn("github_pat_hidden", request["body"].decode())
 
+    def test_callback_uses_null_when_engine_does_not_resolve_a_model(self) -> None:
+        config = self.config_path.read_text(encoding="utf-8")
+        config = config.replace("; echo model: mock-model", "")
+        config = config.replace('model_default = "mock-model"\n', "")
+        self.config_path.write_text(config, encoding="utf-8")
+        server = self.server()
+
+        result = self.run_ringer(self.write_manifest(), server=server)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(len(server.requests), 1)
+        payload = json.loads(server.requests[0]["body"])
+        self.assertIsNone(payload["tasks"][0]["model"])
+
     def test_callback_retries_same_payload_and_then_succeeds(self) -> None:
         server = self.server([500, 503, 204])
 
